@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -108,7 +110,12 @@ func main() {
 	app.Put("/beams/:sectionDesignation", updateBeam)
 	app.Delete("/beams/:sectionDesignation", deleteBeam)
 
-	app.Listen(":3000")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "3000"
+	}
+
+	app.Listen(":" + port)
 }
 
 func getBeams(c *fiber.Ctx) error {
