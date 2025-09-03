@@ -142,6 +142,7 @@ func main() {
 				"POST /beams",
 				"PUT /beams/:sectionDesignation",
 				"DELETE /beams/:sectionDesignation",
+				"GET /stock?productId=<product_id>&postcode=<postcode>",
 			},
 		})
 	})
@@ -151,6 +152,7 @@ func main() {
 	app.Post("/beams", createBeam)
 	app.Put("/beams/:sectionDesignation", updateBeam)
 	app.Delete("/beams/:sectionDesignation", deleteBeam)
+	app.Get("/stock", getStockStatusHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -159,6 +161,24 @@ func main() {
 
 	log.Printf("Starting server on port %s", port)
 	log.Fatal(app.Listen(":" + port))
+}
+
+func getStockStatusHandler(c *fiber.Ctx) error {
+	productID := c.Query("productId")
+	if productID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "productId query parameter is required"})
+	}
+	postcode := c.Query("postcode")
+	if postcode == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "postcode query parameter is required"})
+	}
+
+	status, err := GetStockStatus(productID, postcode)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"productId": productID, "postcode": postcode, "status": status})
 }
 
 func getBeams(c *fiber.Ctx) error {
