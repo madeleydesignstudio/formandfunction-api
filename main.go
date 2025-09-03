@@ -1,10 +1,13 @@
 package main
 
 import (
+	"log"
 	"os"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/logger"
 )
 
 // SteelBeam represents the properties of a steel beam
@@ -103,7 +106,24 @@ var beams = []SteelBeam{
 }
 
 func main() {
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		ReadBufferSize:  32768,            // Increase to 32KB to handle large headers
+		WriteBufferSize: 32768,            // Increase write buffer size
+		ReadTimeout:     time.Second * 30, // 30 second read timeout
+		WriteTimeout:    time.Second * 30, // 30 second write timeout
+		BodyLimit:       10 * 1024 * 1024, // 10MB body limit
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			log.Printf("Request error: %v", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		},
+	})
+
+	// Add logging middleware
+	app.Use(logger.New(logger.Config{
+		Format: "[${time}] ${status} - ${method} ${path} - ${latency}\n",
+	}))
 
 	// Add CORS middleware
 	app.Use(cors.New(cors.Config{
@@ -134,10 +154,11 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "3000"
+		port = "8080"
 	}
 
-	app.Listen(":" + port)
+	log.Printf("Starting server on port %s", port)
+	log.Fatal(app.Listen(":" + port))
 }
 
 func getBeams(c *fiber.Ctx) error {
