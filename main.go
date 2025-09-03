@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 )
 
 // SteelBeam represents the properties of a steel beam
@@ -103,6 +104,27 @@ var beams = []SteelBeam{
 
 func main() {
 	app := fiber.New()
+
+	// Add CORS middleware
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+		AllowMethods: "GET,POST,HEAD,PUT,DELETE,PATCH,OPTIONS",
+		AllowHeaders: "Origin,Content-Type,Accept,Authorization,X-Requested-With",
+	}))
+
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"message": "Form & Function API",
+			"version": "1.0.0",
+			"endpoints": []string{
+				"GET /beams",
+				"GET /beams/:sectionDesignation",
+				"POST /beams",
+				"PUT /beams/:sectionDesignation",
+				"DELETE /beams/:sectionDesignation",
+			},
+		})
+	})
 
 	app.Get("/beams", getBeams)
 	app.Get("/beams/:sectionDesignation", getBeam)
