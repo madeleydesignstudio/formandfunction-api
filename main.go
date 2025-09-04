@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -106,6 +108,18 @@ var beams = []SteelBeam{
 }
 
 func main() {
+	// Configuration
+	httpPort := os.Getenv("PORT")
+	if httpPort == "" {
+		httpPort = "8080"
+	}
+
+	grpcPort := os.Getenv("GRPC_PORT")
+	if grpcPort == "" {
+		grpcPort = "9090"
+	}
+
+	// Create Fiber app for HTTP REST API (frontend consumption)
 	app := fiber.New(fiber.Config{
 		ReadBufferSize:  32768,            // Increase to 32KB to handle large headers
 		WriteBufferSize: 32768,            // Increase write buffer size
@@ -113,7 +127,7 @@ func main() {
 		WriteTimeout:    time.Second * 30, // 30 second write timeout
 		BodyLimit:       10 * 1024 * 1024, // 10MB body limit
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
-			log.Printf("Request error: %v", err)
+			log.Printf("HTTP Request error: %v", err)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": err.Error(),
 			})
@@ -125,17 +139,20 @@ func main() {
 		Format: "[${time}] ${status} - ${method} ${path} - ${latency}\n",
 	}))
 
-	// Add CORS middleware
+	// Add CORS middleware for frontend
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowMethods: "GET,POST,HEAD,PUT,DELETE,PATCH,OPTIONS",
-		AllowHeaders: "Origin,Content-Type,Accept,Authorization,X-Requested-With",
+		AllowOrigins:     "*",
+		AllowMethods:     "GET,POST,HEAD,PUT,DELETE,PATCH,OPTIONS",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Requested-With",
+		AllowCredentials: false,
 	}))
 
+	// HTTP REST API Routes for Frontend
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
-			"message": "Form & Function API",
-			"version": "1.0.0",
+			"message":     "Form & Function API",
+			"version":     "2.0.0",
+			"description": "HTTP REST API for frontend + gRPC backend communication",
 			"endpoints": []string{
 				"GET /beams",
 				"GET /beams/:sectionDesignation",
@@ -144,6 +161,8 @@ func main() {
 				"DELETE /beams/:sectionDesignation",
 				"GET /stock?productId=<product_id>&postcode=<postcode>",
 			},
+			"grpc_port": grpcPort,
+			"http_port": httpPort,
 		})
 	})
 
@@ -154,14 +173,56 @@ func main() {
 	app.Delete("/beams/:sectionDesignation", deleteBeam)
 	app.Get("/stock", getStockStatusHandler)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	// Health check endpoint
+	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"status":       "healthy",
+			"service":      "Form & Function API",
+			"http_port":    httpPort,
+			"grpc_port":    grpcPort,
+			"endpoints":    "HTTP REST for frontend, gRPC for backend services",
+			"beam_count":   len(beams),
+			"architecture": "Hybrid HTTP/gRPC",
+		})
+	})
+
+	// Set up graceful shutdown
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start gRPC server in a goroutine (for backend services like Python calc engine)
+	go func() {
+		log.Printf("Starting gRPC server on port %s (for backend services)", grpcPort)
+		StartGRPCServer(grpcPort)
+	}()
+
+	// Start HTTP REST API server in a goroutine (for frontend)
+	go func() {
+		log.Printf("Starting HTTP REST API server on port %s (for frontend)", httpPort)
+		if err := app.Listen(":" + httpPort); err != nil {
+			log.Fatalf("Failed to start HTTP server: %v", err)
+		}
+	}()
+
+	log.Printf("🚀 Form & Function API Services Started:")
+	log.Printf("   📱 Frontend HTTP REST API: http://localhost:%s", httpPort)
+	log.Printf("   🔧 Backend gRPC Service:   localhost:%s", grpcPort)
+	log.Printf("   💡 Architecture: HTTP for frontend, gRPC for backend services")
+
+	// Wait for shutdown signal
+	sig := <-sigCh
+	log.Printf("Received signal %v, shutting down gracefully...", sig)
+
+	// Graceful shutdown
+	log.Println("Shutting down HTTP server...")
+	if err := app.Shutdown(); err != nil {
+		log.Printf("Error during HTTP server shutdown: %v", err)
 	}
 
-	log.Printf("Starting server on port %s", port)
-	log.Fatal(app.Listen(":" + port))
+	log.Println("Services shut down successfully")
 }
+
+// HTTP REST API Handlers for Frontend
 
 func getStockStatusHandler(c *fiber.Ctx) error {
 	productID := c.Query("productId")
@@ -178,54 +239,105 @@ func getStockStatusHandler(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	return c.JSON(fiber.Map{"productId": productID, "postcode": postcode, "status": status})
+	return c.JSON(fiber.Map{
+		"productId": productID,
+		"postcode":  postcode,
+		"status":    status,
+		"source":    "http_rest_api",
+	})
 }
 
 func getBeams(c *fiber.Ctx) error {
-	return c.JSON(beams)
+	log.Printf("HTTP REST API: GET /beams called")
+	return c.JSON(fiber.Map{
+		"beams":  beams,
+		"count":  len(beams),
+		"source": "http_rest_api",
+	})
 }
 
 func getBeam(c *fiber.Ctx) error {
 	sectionDesignation := c.Params("sectionDesignation")
+	log.Printf("HTTP REST API: GET /beams/%s called", sectionDesignation)
+
 	for _, beam := range beams {
 		if beam.SectionDesignation == sectionDesignation {
-			return c.JSON(beam)
+			return c.JSON(fiber.Map{
+				"beam":   beam,
+				"source": "http_rest_api",
+			})
 		}
 	}
-	return c.SendStatus(fiber.StatusNotFound)
+	return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+		"error":  "Beam not found",
+		"source": "http_rest_api",
+	})
 }
 
 func createBeam(c *fiber.Ctx) error {
+	log.Printf("HTTP REST API: POST /beams called")
+
 	beam := new(SteelBeam)
 	if err := c.BodyParser(beam); err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":  err.Error(),
+			"source": "http_rest_api",
+		})
 	}
+
 	beams = append(beams, *beam)
-	return c.JSON(beam)
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"beam":    beam,
+		"message": "Beam created successfully",
+		"source":  "http_rest_api",
+	})
 }
 
 func updateBeam(c *fiber.Ctx) error {
 	sectionDesignation := c.Params("sectionDesignation")
+	log.Printf("HTTP REST API: PUT /beams/%s called", sectionDesignation)
+
 	beamUpdate := new(SteelBeam)
 	if err := c.BodyParser(beamUpdate); err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":  err.Error(),
+			"source": "http_rest_api",
+		})
 	}
+
 	for i, beam := range beams {
 		if beam.SectionDesignation == sectionDesignation {
 			beams[i] = *beamUpdate
-			return c.JSON(beamUpdate)
+			return c.JSON(fiber.Map{
+				"beam":    beamUpdate,
+				"message": "Beam updated successfully",
+				"source":  "http_rest_api",
+			})
 		}
 	}
-	return c.SendStatus(fiber.StatusNotFound)
+
+	return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+		"error":  "Beam not found",
+		"source": "http_rest_api",
+	})
 }
 
 func deleteBeam(c *fiber.Ctx) error {
 	sectionDesignation := c.Params("sectionDesignation")
+	log.Printf("HTTP REST API: DELETE /beams/%s called", sectionDesignation)
+
 	for i, beam := range beams {
 		if beam.SectionDesignation == sectionDesignation {
 			beams = append(beams[:i], beams[i+1:]...)
-			return c.SendStatus(fiber.StatusNoContent)
+			return c.Status(fiber.StatusNoContent).JSON(fiber.Map{
+				"message": "Beam deleted successfully",
+				"source":  "http_rest_api",
+			})
 		}
 	}
-	return c.SendStatus(fiber.StatusNotFound)
+
+	return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+		"error":  "Beam not found",
+		"source": "http_rest_api",
+	})
 }

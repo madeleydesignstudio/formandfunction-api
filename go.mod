@@ -2,7 +2,11 @@ module formandfunction-api
 
 go 1.25.0
 
-require github.com/gofiber/fiber/v2 v2.52.9
+require (
+	github.com/gofiber/fiber/v2 v2.52.9
+	google.golang.org/grpc v1.67.1
+	google.golang.org/protobuf v1.35.1
+)
 
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect
@@ -15,5 +19,8 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
+	golang.org/x/net v0.28.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/text v0.17.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20241015192408-796eee8c2d53 // indirect
 )
